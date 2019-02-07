@@ -1,0 +1,116 @@
+---
+title: "TATA Variants"
+author: "Jeremy Primus and Kevin Morey"
+date: "2/8/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list=ls())           # clear variables
+# Load the packages into R
+library(knitr)
+
+```
+
+## Introduction
+
+Variants of the pNOS promoter were created by implementing 
+single-nucleotide changes to the TATA box of the PNOS promoter.  These changes affect the equilibrium binding constant of the promoter/TATA binding protein interaction.
+
+
+```{r data input, echo = FALSE}
+# Data input
+
+# quantified and normalized in Matlab
+relativeLuminescence <- c(1, 0.321591, 0.251972, 0.224204, 0.197042,0.158389, 0.0938343, 0.0848641)
+stderror <- c(0.1472, 0.0919, 0.0861, 0.0226, 0.3152, 0.1229, 0.0244, 0.0448)
+promoterNames <- c("PNOS Consensus", "PNOS 5-8 complement", "Wildtype PNOS", "PNOS TC8-9GG", "PNOS 4bp deletion", "PNOS 1-4 Complement", "PNOS A4G","PNOS A5C")
+sequence <- c('TATATATAC', 'CATATTAAC', 'CATAAATTC', 'CATAAATGG', 'GTTAAATTC','GTATAATTC', 'GTATAATTC', 'CATACATTC')
+
+# Bar plot of relative luminesence
+par(mar=c(6,4,1,0))
+mids <- barplot(relativeLuminescence, main="PNOS TATA Variants", ylim = c(0, 1.1), col = "blue")
+text(x = mids, y = 0, srt = 55, adj = 1, labels = promoterNames, cex = 0.8, xpd = TRUE)
+# add error bars
+arrows(x0 = mids, y0 = relativeLuminescence - stderror/2, x1 = mids, y1 = relativeLuminescence + stderror/2, code = 3, angle = 90, length = 0.15 )
+
+```
+
+  
+## Analysis
+Assuming the measured luminescence is proportional to the transcription rate, we can approximate the effect of the nucleotide edits on the equilibrium binding constant, $K_{eq}$
+     
+## Thermodynamically Modeling Transcription Rates
+  Define all energies relative to a ground state:  $\Delta G$  
+  The TATA binding protein/promoter interaction has two possible states: unbound, and bound  
+  The unbound state is the same energetically for all promoter variants, so we choose this to be the ground state: 0
+  
+  For the *i*-th variant, the binding interaction energy, measured relative to the unoccupied state, 0 is $\Delta G_{i}$  
+
+  The partition function describes the statistical properties of a system in thermodynamic equilibrium.
+
+  $$ P(b) = \frac{e^{-\Delta G_{i}}}{1+e^{-\Delta G_{i}}} $$
+   Assuming transcription rate $TR_i$ is proportional to binding probability
+   $$ TR_{i} = \alpha \frac{e^{-\Delta G_{i}}}{1+e^{-\Delta G_{i}}} + \epsilon $$
+where $\alpha$ and $\epsilon$ are the theoretical maximum and minumum transcription rates   
+Assume measured luminescence to be proportional to $TR_{i}$  
+so $$ L_i = A\left [\alpha \frac{e^{-\Delta G_{i}}}{1+e^{-\Delta G_{i}}} + \epsilon \right] = \widetilde{\alpha} \frac{e^{-\Delta G_{i}}}{1+e^{-\Delta G_{i}}} + \widetilde{\epsilon} $$
+```{r perform fit, message= FALSE, results=FALSE, echo=FALSE}
+library(DEoptim)
+
+# Bar plot of luminesence 
+data <- relativeLuminescence
+
+# function to be minimized
+#fitVars <- c(a, e, Go, delG1 - delG8)
+minFcn <- function(fitVars) {
+  f <-(fitVars[1]*exp(-fitVars[3])/(1+exp(-fitVars[3])) + fitVars[2] - data[1])^2 + sum((fitVars[1]*exp(-fitVars[3]-fitVars[4:10])/(1+exp(-fitVars[3]-fitVars[4:10])) + fitVars[2] - data[2:8])^2)
+  return(f)
+}
+lower <- rep(0,10)                              # set bounds for fit algorithm
+upper <- c(20,4.18046e-05,20,20,20,20,20,20,20,20)
+set.seed(1234)                                  # set seed for reproducibility 
+outDEoptim <- DEoptim(minFcn, lower, upper, DEoptim.control(itermax = 500))     # run fit
+summary(outDEoptim)
+paramFits <- outDEoptim$optim$bestmem
+```
+
+```{r assign parameters, echo =FALSE}
+# assign fit parameters
+alpha <- paramFits[1] 
+epsilon <- paramFits[2]  
+Go <- paramFits[3] 
+delG<- paramFits[4:10]  
+x = c(Go, Go+delG)
+```
+
+```{r plot data, echo = FALSE}
+#bar plot of real data
+par(mar=c(6,4,1,0))
+par(oma=c(1,0,0,0))
+plot(x,relativeLuminescence, xaxt = 'n', xlab = "", ylab = "Relative Luminescence", cex=1.2, main = "Thermodynamic Fit")
+mtext(text = c(expression(Delta),"     G"), side = 1, line = 0, outer = TRUE, cex = 1.2)
+segments(x, 0.0, x, relativeLuminescence, col = "blue", lwd = 12)
+text(x = x, y = 0, srt = 45, adj = 1, labels = promoterNames, cex = 0.8, xpd = TRUE)
+#add error bars
+arrows(x0 = x, y0 = data - stderror/2, x1 = x, y1 = data + stderror/2, code = 3, angle = 90, length = 0.15 )
+#overlay fit
+xx <-seq(0, 10, length=1000)
+y  <-alpha*(exp(-xx)/(1+exp(-xx)))+epsilon
+lines(xx,y)
+
+
+```
+
+
+  
+    
+      
+  **Table 1.** Binding energy values ($E/k_{B}T$) obtained from thermodynamic fits.  Values are relative to consensus.
+```{r table of results, echo=FALSE}
+df <- data.frame(sequence, formatC(c(0, delG), digits = 3), row.names = promoterNames)  # create a table
+colnames(df) <- c("Sequence", "$\\Delta G$")
+kable(df)
+```
+
